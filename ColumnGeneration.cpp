@@ -4,24 +4,22 @@
 std::vector<std::vector<int>> ColumnGeneration::Q;
 IloNumArray ColumnGeneration::dual_variables;
 double ColumnGeneration::reduced_cost;
+const int ColumnGeneration::NUM_ITEMS;
+const int ColumnGeneration::MAX_LENGTH;
 
 void ColumnGeneration::initial_column(std::vector<int> item_length) {
 	ColumnGeneration::reduced_cost = 0;
 
-	for (int i = 0; i < 5; ++i) {
-		double number_piece = floor(110 / item_length[i]);
+	for (int i = 0; i < ColumnGeneration::NUM_ITEMS; ++i) {
+		double number_piece = floor(ColumnGeneration::MAX_LENGTH / item_length[i]);
 		
 		std::vector<int> q;
-		for (int j = 0; j < 5; ++j) {
+		for (int j = 0; j < ColumnGeneration::NUM_ITEMS; ++j) {
 			q.push_back(0);
 		}
 		q[i] = number_piece;
 		ColumnGeneration::Q.push_back(q);
 	}
-
-	/*ColumnGeneration::Q.push_back({ 1, 0, 0, 0, 1 });
-	ColumnGeneration::Q.push_back({ 1, 2, 0, 0, 0 });
-	ColumnGeneration::Q.push_back({ 3, 0, 1, 0, 0 });*/
 }
 
 void ColumnGeneration::Build() {
@@ -37,9 +35,10 @@ void ColumnGeneration::Build() {
 	{
 		ColumnGeneration::MasterProblem(item_length, item_demand);
 		ColumnGeneration::SubProblems(item_length);
+		ColumnGeneration::ShowCurrentSolution();
 	} while (ColumnGeneration::reduced_cost < 0);
 
-	std::cout << "Hello" << std::endl;
+	std::cout << "Finish Column Generation Algorithm" << std::endl;
 
 #pragma endregion
 
@@ -65,7 +64,7 @@ void ColumnGeneration::MasterProblem(std::vector<int> item_length, std::vector<i
 	// Constraints
 	IloRangeArray all_constraints(env);
 	IloExpr constraint(env);
-	for (int i = 0; i < 5; ++i) {
+	for (int i = 0; i < ColumnGeneration::NUM_ITEMS; ++i) {
 		constraint.clear();
 		for (int j = 0; j < ColumnGeneration::Q.size(); ++j) {
 			constraint += ColumnGeneration::Q[j][i] * x[j];
@@ -77,7 +76,10 @@ void ColumnGeneration::MasterProblem(std::vector<int> item_length, std::vector<i
 
 	cplex.extract(model);
 	cplex.exportModel("CG_master.lp");
-	
+	cplex.setOut(env.getNullStream());
+	cplex.setWarning(env.getNullStream());
+	cplex.setError(env.getNullStream());
+
 	if (cplex.solve()) {
 		// Dual variables 
 		IloNumArray dual_sln(env);
@@ -85,9 +87,9 @@ void ColumnGeneration::MasterProblem(std::vector<int> item_length, std::vector<i
 
 		ColumnGeneration::dual_variables = dual_sln;
 
-		for (int i = 0; i < 5; ++i) {
+		/*for (int i = 0; i < ColumnGeneration::NUM_ITEMS; ++i) {
 			std::cout << ColumnGeneration::dual_variables[i] << std::endl;
-		}
+		}*/
 	}
 
 	model.end();
@@ -103,21 +105,24 @@ void ColumnGeneration::SubProblems(std::vector<int> item_length) {
 	IloCplex cplex(env);
 
 	// Create decision variables 
-	IloIntVarArray y(env, 5, 0, INT_MAX);
+	IloIntVarArray y(env, ColumnGeneration::NUM_ITEMS, 0, INT_MAX);
 
 	// Objective function
 	model.add(IloMaximize(env, IloScalProd(ColumnGeneration::dual_variables, y)));
 
 	// Feasibility constraints
 	IloExpr constraint(env);
-	for (int i = 0; i < 5; ++i) {
+	for (int i = 0; i < ColumnGeneration::NUM_ITEMS; ++i) {
 		constraint += item_length[i] * y[i];
 	}
-	model.add(constraint <= 110);
+	model.add(constraint <= ColumnGeneration::MAX_LENGTH);
 	constraint.end();
 
 	cplex.extract(model);
 	cplex.exportModel("CG_sub.lp");
+	cplex.setOut(env.getNullStream()); 
+	cplex.setWarning(env.getNullStream());
+	cplex.setError(env.getNullStream());
 
 	if (cplex.solve()) {
 		// Update reduced cost
@@ -125,7 +130,7 @@ void ColumnGeneration::SubProblems(std::vector<int> item_length) {
 
 		if (ColumnGeneration::reduced_cost < 0) {
 			std::vector<int> new_column;
-			for (int i = 0; i < 5; ++i) {
+			for (int i = 0; i < ColumnGeneration::NUM_ITEMS; ++i) {
 				new_column.push_back(cplex.getValue(y[i]));
 			}
 			ColumnGeneration::Q.push_back(new_column);
@@ -138,5 +143,16 @@ void ColumnGeneration::SubProblems(std::vector<int> item_length) {
 }
 
 void ColumnGeneration::ShowCurrentSolution() {
-
+	
+	std::cout << "\n\n";
+	std::cout << "=============================================" << std::endl;
+	for (int i = 0; i < ColumnGeneration::Q.size(); ++i) {
+		std::cout << "Pattern[" << i << "] = [";
+		for (int q : ColumnGeneration::Q[i]) {
+			std::cout << q << " ";
+		}
+		std::cout << "]" << std::endl;
+	}
+	std::cout << "=============================================" << std::endl;
+	std::cout << "\n\n";
 }
